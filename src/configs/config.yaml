@@ -1,0 +1,11 @@
+train_csv_path: "data/train_images.csv"
+train_dir_path: "data/train_images/"
+test_csv_path: "data/test_images_path.csv"
+test_dir_path: "data/test_images/"
+resize_size: [224, 224]
+brightness: 0.2
+contrast: 0.2
+saturation: 0.2
+hue: 0.1
+batch_size: 32
+num_workers: 4
