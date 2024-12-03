@@ -20,3 +20,11 @@ If You don't have Poetry installed, check the [Poetry website](https://python-po
 - ### Main framework
 
 The main framework that we use for this project is `PyTorch`.
+
+
+## Possible solution
+
+After careful consideration, the go to model seems to be either `EfficientNet` or `ResNet`. Both models have been proven to be very effective in image classification tasks. Using method such as **transfer learning** enables us to use the pre-trained weights of the model on dataset like ImageNet and fine-tune it to our specific task.
+
+## Process
+
