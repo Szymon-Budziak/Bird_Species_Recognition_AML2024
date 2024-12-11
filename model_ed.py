@@ -169,20 +169,20 @@ val_transform = transforms.Compose([
 ])
 
 # Load data and create datasets
-attributes = np.load("data/attributes.npy")
+attributes = np.load("./data/attributes.npy")
 attributes_tensor = torch.tensor(attributes, dtype=torch.float32)
 
-train_data = pd.read_csv("data/train_images.csv")
-test_data = pd.read_csv("data/test_images_path.csv")
+train_data = pd.read_csv("./data/train_images.csv")
+test_data = pd.read_csv("./data/test_images_path.csv")
 
 # Split train data into train and validation
 train_size = int(0.9 * len(train_data))
 val_size = len(train_data) - train_size
 train_dataset, val_dataset = torch.utils.data.random_split(train_data, [train_size, val_size])
 
-train_dataset = BirdDataset(train_dataset, "data/train_images", attributes_tensor, transform=train_transform)
-val_dataset = BirdDataset(val_dataset, "data/train_images", attributes_tensor, transform=val_transform)
-test_dataset = BirdDataset(test_data, "data/test_images", attributes_tensor, transform=val_transform, is_train=False)
+train_dataset = BirdDataset(train_dataset, "./data/train_images", attributes_tensor, transform=train_transform)
+val_dataset = BirdDataset(val_dataset, "./data/train_images", attributes_tensor, transform=val_transform)
+test_dataset = BirdDataset(test_data, "./data/test_images", attributes_tensor, transform=val_transform, is_train=False)
 
 # Create data loaders
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
