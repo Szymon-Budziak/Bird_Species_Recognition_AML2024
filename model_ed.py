@@ -151,71 +151,74 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler
             
     return model
 
-# Data augmentation and normalization
-train_transform = transforms.Compose([
-    transforms.RandomResizedCrop(380),
-    transforms.RandomHorizontalFlip(),
-    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
-    transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
-    transforms.RandomPerspective(distortion_scale=0.2),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-])
 
-val_transform = transforms.Compose([
-    transforms.Resize(400),
-    transforms.CenterCrop(380),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-])
+if __name__ == "__main__":
 
-# Load data and create datasets
-attributes = np.load("./data/attributes.npy")
-attributes_tensor = torch.tensor(attributes, dtype=torch.float32)
+    # Data augmentation and normalization
+    train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(380),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+        transforms.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.9, 1.1)),
+        transforms.RandomPerspective(distortion_scale=0.2),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
 
-train_data = pd.read_csv("./data/train_images.csv")
-test_data = pd.read_csv("./data/test_images_path.csv")
+    val_transform = transforms.Compose([
+        transforms.Resize(400),
+        transforms.CenterCrop(380),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
 
-# Split train data into train and validation
-train_size = int(0.9 * len(train_data))
-val_size = len(train_data) - train_size
-train_dataset, val_dataset = torch.utils.data.random_split(train_data, [train_size, val_size])
+    # Load data and create datasets
+    attributes = np.load("./data/attributes.npy")
+    attributes_tensor = torch.tensor(attributes, dtype=torch.float32)
 
-train_dataset = BirdDataset(train_dataset, "./data/train_images", attributes_tensor, transform=train_transform)
-val_dataset = BirdDataset(val_dataset, "./data/train_images", attributes_tensor, transform=val_transform)
-test_dataset = BirdDataset(test_data, "./data/test_images", attributes_tensor, transform=val_transform, is_train=False)
+    train_data = pd.read_csv("./data/train_images.csv")
+    test_data = pd.read_csv("./data/test_images_path.csv")
 
-# Create data loaders
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
-val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=4)
-test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4)
+    # Split train data into train and validation
+    train_size = int(0.9 * len(train_data))
+    val_size = len(train_data) - train_size
+    train_dataset, val_dataset = torch.utils.data.random_split(train_data, [train_size, val_size])
 
-# Initialize model and training components
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(device)
-model = BirdClassifier().to(device)
+    train_dataset = BirdDataset(train_dataset, "./data/train_images", attributes_tensor, transform=train_transform)
+    val_dataset = BirdDataset(val_dataset, "./data/train_images", attributes_tensor, transform=val_transform)
+    test_dataset = BirdDataset(test_data, "./data/test_images", attributes_tensor, transform=val_transform, is_train=False)
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
-scheduler = CosineAnnealingLR(optimizer, T_max=30, eta_min=1e-6)
+    # Create data loaders
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=4)
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4)
 
-# Train the model
-model = train_model(model, train_loader, val_loader, criterion, optimizer, scheduler, num_epochs=20, device=device)
+    # Initialize model and training components
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
+    model = BirdClassifier().to(device)
 
-# Generate predictions
-model.eval()
-predictions = []
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    scheduler = CosineAnnealingLR(optimizer, T_max=30, eta_min=1e-6)
 
-with torch.no_grad():
-    for images, ids, attributes in test_loader:
-        images = images.to(device)
-        attributes = attributes.to(device)
-        
-        outputs = model(images, attributes)
-        _, predicted = outputs.max(1)
-        predictions.extend(zip(ids, predicted.cpu().numpy() + 1))
+    # Train the model
+    model = train_model(model, train_loader, val_loader, criterion, optimizer, scheduler, num_epochs=20, device=device)
 
-# Create submission file
-submission_df = pd.DataFrame(predictions, columns=['id', 'label'])
-submission_df.to_csv('submission.csv', index=False)
-print("Submission file created successfully")
+    # Generate predictions
+    model.eval()
+    predictions = []
+
+    with torch.no_grad():
+        for images, ids, attributes in test_loader:
+            images = images.to(device)
+            attributes = attributes.to(device)
+            
+            outputs = model(images, attributes)
+            _, predicted = outputs.max(1)
+            predictions.extend(zip(ids, predicted.cpu().numpy() + 1))
+
+    # Create submission file
+    submission_df = pd.DataFrame(predictions, columns=['id', 'label'])
+    submission_df.to_csv('submission.csv', index=False)
+    print("Submission file created successfully")
