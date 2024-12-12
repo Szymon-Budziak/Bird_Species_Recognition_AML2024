@@ -6,14 +6,15 @@ import pandas as pd
 from utils import load_config
 import os
 from tempfile import TemporaryDirectory
+from collections import Counter
 
 from custom_models import ModelFactory
-from utils import save_submission, submit_to_kaggle
+from utils import save_submission, submit_to_kaggle, save_best_model
 from data_generator import get_data_loaders
 
 
 def train_model(
-    model, train_loader, val_loader, criterion, optimizer, scheduler, device, config
+    model, train_loader, val_loader, criterion, optimizer, scheduler, device, num, config
 ):
     print("Training model")
 
@@ -21,72 +22,79 @@ def train_model(
     os.makedirs(config["models_dir"], exist_ok=True)
     os.makedirs(config["submission_dir"], exist_ok=True)
 
-    with TemporaryDirectory() as temp_dir:
-        best_model_params_path = os.path.join(temp_dir, "best_model_params.pt")
+    best_model_path = os.path.join(config["models_dir"], f"best_model_{config['model_type']}_{num}.pt")
+    best_acc = 0.0
+    patience_counter = 0
 
-        torch.save(model.state_dict(), best_model_params_path)
-        best_acc = 0.0
-        patience_counter = 0
+    for epoch in range(config["num_epochs"]):
+        print(f"Epoch {epoch+1}/{config['num_epochs']}")
+        print("-" * 10)
 
-        for epoch in range(config["num_epochs"]):
-            print(f"Epoch {epoch+1}/{config['num_epochs']}")
-            print("-" * 10)
+        # Each epoch has a training and validation phase
+        for phase in ["train", "val"]:
+            if phase == "train":
+                model.train()  # Set model to training mode
+                dataloader = train_loader
+            else:
+                model.eval()  # Set model to evaluate mode
+                dataloader = val_loader
 
-            # Each epoch has a training and validation phase
-            for phase in ["train", "val"]:
+            running_loss = running_corrects = total = 0.0
+
+            # Iterate over data
+            for images, labels, attributes in dataloader:
+                images, labels, attributes = (
+                    images.to(device),
+                    labels.to(device),
+                    attributes.to(device),
+                )
+
+                # Zero the parameter gradients
                 if phase == "train":
-                    model.train()  # Set model to training mode
-                    dataloader = train_loader
-                else:
-                    model.eval()  # Set model to evaluate mode
-                    dataloader = val_loader
+                    optimizer.zero_grad()
 
-                running_loss = running_corrects = total = 0.0
+                # Forward + Track history if only in train phase
+                with torch.set_grad_enabled(phase == "train"):
+                    outputs = model(images, attributes)
+                    loss = criterion(outputs, labels)
 
-                # Iterate over data
-                for images, labels, attributes in dataloader:
-                    images, labels, attributes = (
-                        images.to(device),
-                        labels.to(device),
-                        attributes.to(device),
-                    )
-
-                    # Zero the parameter gradients
+                    # Backward + optimize only if in training phase
                     if phase == "train":
-                        optimizer.zero_grad()
+                        loss.backward()
+                        optimizer.step()
 
-                    # Forward + Track history if only in train phase
-                    with torch.set_grad_enabled(phase == "train"):
-                        outputs = model(images, attributes)
-                        loss = criterion(outputs, labels)
+                _, preds = torch.max(outputs, 1)
+                running_loss += loss.item()
+                total += labels.size(0)
+                running_corrects += preds.eq(labels).sum().item()
 
-                        # Backward + optimize only if in training phase
-                        if phase == "train":
-                            loss.backward()
-                            optimizer.step()
+            if phase == "train":
+                scheduler.step()
 
-                    _, preds = torch.max(outputs, 1)
-                    running_loss += loss.item()
-                    total += labels.size(0)
-                    running_corrects += preds.eq(labels).sum().item()
+            epoch_loss = running_loss / len(dataloader)
+            epoch_acc = 100 * running_corrects / total
 
-                if phase == "train":
-                    scheduler.step()
+            print(f"{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}")
 
-                epoch_loss = running_loss / len(dataloader)
-                epoch_acc = 100 * running_corrects / total
-
-                print(f"{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}")
-
-                if phase == "val" and epoch_acc > best_acc:
+            if phase == "val":
+                if epoch_acc > best_acc:
                     best_acc = epoch_acc
-                    torch.save(model.state_dict(), best_model_params_path)
+                    save_best_model(model, optimizer, scheduler, best_acc, epoch, best_model_path)
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
 
-        print(f"\nTraining complete")
-        print(f"Best val Acc: {best_acc:.4f}")
+        # Check early stopping
+        if patience_counter >= config["patience"]:
+            print(f"Early stopping triggered at epoch {epoch+1}")
+            break
 
-        # Load best model weights
-        model.load_state_dict(torch.load(best_model_params_path, weights_only=True))
+    print(f"\nTraining complete")
+    print(f"Best val Acc: {best_acc:.4f}")
+
+    # Load best model weights
+    checkpoint = torch.load(best_model_path)
+    model.load_state_dict(checkpoint["model_state_dict"])
     return model
 
 
@@ -140,15 +148,19 @@ if __name__ == "__main__":
     ).to(device)
 
     # Optimizer, criterion and scheduler
-    # class_weights = torch.FloatTensor(class_weights).to(device)
-    criterion = nn.CrossEntropyLoss(label_smoothing=config["label_smoothing"])
+    class_counts = Counter(train_df['label'])
+    class_weights = np.array(
+        [1.0 / class_counts.get(i, 1) for i in range(config["num_classes"])]
+    )
+    class_weights = torch.FloatTensor(class_weights).to(device)
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=config["label_smoothing"])
+
     optimizer = optim.Adam(
         model.parameters(),
         lr=config["learning_rate"],
         weight_decay=config["weight_decay"],
     )
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
-    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30, eta_min=1e-6)
 
     # Train
     best_model = train_model(
@@ -159,6 +171,7 @@ if __name__ == "__main__":
         optimizer,
         scheduler,
         device,
+        args.num,
         config
     )
 
