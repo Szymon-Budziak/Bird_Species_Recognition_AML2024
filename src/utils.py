@@ -2,6 +2,7 @@ import yaml
 import pandas as pd
 import subprocess
 import os
+import torch
 
 
 def load_config(config_file_path: str) -> dict:
@@ -61,3 +62,13 @@ def submit_to_kaggle(file_path, message):
         print("Submission successful!")
     except subprocess.CalledProcessError as e:
         print("Submission failed:", e.stderr)
+
+
+def save_best_model(model, optimizer, scheduler, epoch, best_acc, model_path):
+    torch.save({
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "scheduler_state_dict": scheduler.state_dict(),
+        "best_acc": best_acc,
+    }, model_path)
