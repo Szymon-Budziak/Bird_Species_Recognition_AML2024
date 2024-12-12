@@ -164,3 +164,4 @@ cython_debug/
 .python-version
 kaggle.json
 data/
+experiments/

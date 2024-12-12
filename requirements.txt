@@ -1,0 +1,8 @@
+torch
+torchvision
+pandas
+pyyaml
+kaggle
+black
+transformers
+scikit-learn
