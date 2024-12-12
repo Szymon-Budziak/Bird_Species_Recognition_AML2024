@@ -21,22 +21,6 @@ def load_config(config_file_path: str) -> dict:
     return config
 
 
-def get_num_classes(csv_path):
-    """Get the number of unique classes from the CSV file"""
-    df = pd.read_csv(csv_path)
-    num_classes = len(df["label"].unique())
-    print(f"Number of classes: {num_classes}")
-    return num_classes
-
-
-def unfreeze_layers(model, num_layers: int = 5):
-    for param in model.parameters():
-        param.requires_grad = True
-
-    for param in list(model.parameters())[-num_layers:]:
-        param.requires_grad = True
-
-
 def save_submission(submission, submission_path):
     os.makedirs(os.path.dirname(submission_path), exist_ok=True)
     pd.DataFrame(submission, columns=["id", "label"]).to_csv(
@@ -64,11 +48,15 @@ def submit_to_kaggle(file_path, message):
         print("Submission failed:", e.stderr)
 
 
-def save_best_model(model, optimizer, scheduler, epoch, best_acc, model_path):
-    torch.save({
-        "epoch": epoch,
-        "model_state_dict": model.state_dict(),
-        "optimizer_state_dict": optimizer.state_dict(),
-        "scheduler_state_dict": scheduler.state_dict(),
-        "best_acc": best_acc,
-    }, model_path)
+def save_best_model(model, optimizer, scheduler, best_acc, epoch, best_model_path):
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "best_acc": best_acc,
+            "epoch": epoch,
+        },
+        best_model_path,
+    )
+    print(f"Saved new best model with accuracy: {best_acc:.4f}")
