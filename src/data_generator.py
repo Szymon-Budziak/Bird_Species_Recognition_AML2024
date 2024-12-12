@@ -62,9 +62,7 @@ def get_transforms(
     train_transformations = [
         transforms.Resize(size=tuple(config["resize_size"])),
         transforms.RandomRotation(10),
-        # transforms.RandomAffine(
-        #     0, translate=(0.2, 0.2), scale=(0.8, 1.2), shear=20
-        # ),
+        transforms.RandomAffine(0, translate=(0.2, 0.2), scale=(0.8, 1.2), shear=20),
         transforms.ToTensor(),
     ]
 
