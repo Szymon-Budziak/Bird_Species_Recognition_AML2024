@@ -23,7 +23,7 @@ class BirdDataset(Dataset):
     ):
         self.dataframe = dataframe
         self.img_dir = img_dir
-        self.attributes = attributes
+        self.attributes_tensor = attributes
         self.transform = transform
         self.is_train = is_train
 
@@ -49,9 +49,6 @@ class BirdDataset(Dataset):
 
         if self.transform:
             image = self.transform(image)
-
-        print("TYPES")
-        print(type(image), type(label), type(attributes))
 
         return image, label, attributes
 
@@ -107,7 +104,7 @@ def get_data_loaders(
         test_size=config["val_size"],
         shuffle=True,
         random_state=101,
-        stratify=train_df["label"],
+        stratify=train_df["label"] if "label" in train_df.columns else None,
     )
     print(
         f"Total train dataset size: {total_size} | Training size: {len(train_df)} | Validation size: {len(val_df)} | Test size: {len(test_df)}"
