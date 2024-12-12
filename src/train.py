@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader
 import numpy as np
 import pandas as pd
 from utils import load_config
 import os
-from tempfile import TemporaryDirectory
 from collections import Counter
 
 from custom_models import ModelFactory
@@ -14,7 +14,15 @@ from data_generator import get_data_loaders
 
 
 def train_model(
-    model, train_loader, val_loader, criterion, optimizer, scheduler, device, num, config
+    model,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    criterion,
+    optimizer,
+    scheduler,
+    device: torch.device,
+    num: int,
+    config: dict,
 ):
     print("Training model")
 
@@ -22,7 +30,9 @@ def train_model(
     os.makedirs(config["models_dir"], exist_ok=True)
     os.makedirs(config["submission_dir"], exist_ok=True)
 
-    best_model_path = os.path.join(config["models_dir"], f"best_model_{config['model_type']}_{num}.pt")
+    best_model_path = os.path.join(
+        config["models_dir"], f"best_model_{config['model_type']}_{num}.pt"
+    )
     best_acc = 0.0
     patience_counter = 0
 
@@ -79,7 +89,9 @@ def train_model(
             if phase == "val":
                 if epoch_acc > best_acc:
                     best_acc = epoch_acc
-                    save_best_model(model, optimizer, scheduler, best_acc, epoch, best_model_path)
+                    save_best_model(
+                        model, optimizer, scheduler, best_acc, epoch, best_model_path
+                    )
                     patience_counter = 0
                 else:
                     patience_counter += 1
@@ -98,7 +110,7 @@ def train_model(
     return model
 
 
-def evaluate_model(model, test_loader, device):
+def evaluate_model(model, test_loader: DataLoader, device: torch.device) -> list:
     print("Evaluating model")
     model.eval()
     submission = []
@@ -148,12 +160,14 @@ if __name__ == "__main__":
     ).to(device)
 
     # Optimizer, criterion and scheduler
-    class_counts = Counter(train_df['label'])
+    class_counts = Counter(train_df["label"])
     class_weights = np.array(
         [1.0 / class_counts.get(i, 1) for i in range(config["num_classes"])]
     )
     class_weights = torch.FloatTensor(class_weights).to(device)
-    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=config["label_smoothing"])
+    criterion = nn.CrossEntropyLoss(
+        weight=class_weights, label_smoothing=config["label_smoothing"]
+    )
 
     optimizer = optim.Adam(
         model.parameters(),
@@ -172,7 +186,7 @@ if __name__ == "__main__":
         scheduler,
         device,
         args.num,
-        config
+        config,
     )
 
     # Evaluate
