@@ -9,10 +9,10 @@ class ModelFactory:
     def create_model(model_type, num_classes, attribute_dim):
         if model_type == "vit":
             return BirdClassifierVIT(num_classes, attribute_dim)
-        elif model_type == "resnet50":
-            return BirdClassifierResnet50(num_classes, attribute_dim)
-        elif model_type == "eff_net_b2":
-            return BirdClassifierEffNetB2(num_classes, attribute_dim)
+        elif model_type == "resnet":
+            return BirdClassifierResnet(num_classes, attribute_dim)
+        elif model_type == "eff_net":
+            return BirdClassifierEffNet(num_classes, attribute_dim)
         else:
             raise ValueError(f"Unknown model type: {model_type}")
 
@@ -55,9 +55,9 @@ class BirdClassifierVIT(nn.Module):
         return self.classifier(combined)
 
 
-class BirdClassifierResnet50(nn.Module):
+class BirdClassifierResnet(nn.Module):
     def __init__(self, num_classes=200, attribute_dim=312):
-        super(BirdClassifierResnet50, self).__init__()
+        super(BirdClassifierResnet, self).__init__()
         self.backbone = models.resnet50(weights="IMAGENET1K_V2")
         output_features = self.backbone.fc.in_features
         self.backbone.fc = nn.Identity()
@@ -75,19 +75,22 @@ class BirdClassifierResnet50(nn.Module):
         return self.classifier(combined)
 
 
-class BirdClassifierEffNetB2(nn.Module):
+class BirdClassifierEffNet(nn.Module):
     def __init__(self, num_classes=200, attribute_dim=312):
-        super(BirdClassifierEffNetB2, self).__init__()
+        super(BirdClassifierEffNet, self).__init__()
         self.backbone = models.efficientnet_b4(weights="IMAGENET1K_V1")
         output_features = self.backbone.classifier[3].in_features
         self.backbone.classifier = nn.Identity()
 
         self.attribute_processor = nn.Sequential(
-            nn.Linear(attribute_dim, 512),
+            nn.Linear(attribute_dim + output_features, 512),
             nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(512, 256),
             nn.ReLU(),
         )
 
-        self.backbone.classifier = nn.Identity()
+    def forward(self, x, attributes):
+        backbone_output = self.backbone(x)
+        combined = torch.cat((backbone_output, attributes), dim=1)
+        return self.classifier(combined)
