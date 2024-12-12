@@ -1,25 +1,30 @@
-import os
-from tempfile import TemporaryDirectory
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision import models
-from torch.optim import lr_scheduler
+import numpy as np
+import pandas as pd
+from utils import load_config
+import os
+from tempfile import TemporaryDirectory
 
-from process_data import get_data_loaders
-from utils import load_config, get_num_classes
+from custom_models import ModelFactory
+from utils import save_submission, submit_to_kaggle
+from data_generator import get_data_loaders
 
 
 def train_model(
-    model, criterion, optimizer, scheduler, num_epochs, train_loader, val_loader, device
+    model, train_loader, val_loader, criterion, optimizer, scheduler, device, num_epochs
 ):
-    best_acc = 0.0
-    best_model_state = None
+    print("Training model")
 
     with TemporaryDirectory() as temp_dir:
-        # Training loop
+        best_model_params_path = os.path.join(temp_dir, "best_model_params.pt")
+
+        torch.save(model.state_dict(), best_model_params_path)
+        best_acc = 0.0
+
         for epoch in range(num_epochs):
-            print(f"Epoch {epoch + 1}/{num_epochs}")
+            print(f"Epoch {epoch+1}/{num_epochs}")
             print("-" * 10)
 
             # Each epoch has a training and validation phase
@@ -31,103 +36,124 @@ def train_model(
                     model.eval()  # Set model to evaluate mode
                     dataloader = val_loader
 
-                running_loss = 0.0
-                running_corrects = 0
+                running_loss = running_corrects = total = 0.0
 
-                for inputs, labels in dataloader:
-                    inputs = inputs.to(device)
-                    labels = labels.to(device)
+                # Iterate over data
+                for images, labels, attributes in dataloader:
+                    images, labels, attributes = (
+                        images.to(device),
+                        labels.to(device),
+                        attributes.to(device),
+                    )
 
                     # Zero the parameter gradients
                     optimizer.zero_grad()
 
-                    # Forward pass
+                    # Forward + Track history if only in train phase
                     with torch.set_grad_enabled(phase == "train"):
-                        outputs = model(inputs)
-                        _, preds = torch.max(outputs, 1)
+                        outputs = model(images, attributes)
                         loss = criterion(outputs, labels)
 
-                        # Backward pass + optimize only if in training phase
+                        # Backward + optimize only if in training phase
                         if phase == "train":
                             loss.backward()
                             optimizer.step()
 
-                    # Statistics
-                    running_loss += loss.item() * inputs.size(0)
-                    running_corrects += torch.sum(preds == labels.data)
+                    _, preds = torch.max(outputs, 1)
+                    running_loss += loss.item()
+                    total += labels.size(0)
+                    running_corrects += preds.eq(labels).sum().item()
 
                 if phase == "train":
                     scheduler.step()
 
-                epoch_loss = running_loss / len(dataloader.dataset)
-                epoch_acc = running_corrects.double() / len(dataloader.dataset)
+                epoch_loss = running_loss / len(dataloader)
+                epoch_acc = 100 * running_corrects / total
 
                 print(f"{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}")
 
-                # Deep copy the model
                 if phase == "val" and epoch_acc > best_acc:
                     best_acc = epoch_acc
-                    best_model_state = model.state_dict()
+                    torch.save(model.state_dict(), best_model_params_path)
 
-        # Load best model state
-        model.load_state_dict(best_model_state)
+        print(f"\nTraining complete")
+        print(f"Best val Acc: {best_acc:.4f}")
 
+        # Load best model weights
+        model.load_state_dict(torch.load(best_model_params_path, weights_only=True))
     return model
 
 
+def evaluate_model(model, test_loader, device):
+    print("Evaluating model")
+    model.eval()
+    submission = []
+
+    with torch.no_grad():
+        for images, ids, attributes in test_loader:
+            images, labels, attributes = (
+                images.to(device),
+                labels.to(device),
+                attributes.to(device),
+            )
+            outputs = model(images, attributes)
+            _, preds = torch.max(outputs, 1)
+            submission.extend(zip(ids.cpu().numpy(), preds.cpu().numpy() + 1))
+
+    return submission
+
+
 if __name__ == "__main__":
-    # Load preprocessing configuration
-    preprocessing_config = load_config("configs/config.yaml")
+    import argparse
 
-    # Prepare data loaders
-    train_loader, val_loader, test_loader = get_data_loaders(preprocessing_config)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num", type=int, default=1)
+    args = parser.parse_args()
 
-    # Load pre-trained ResNet model
-    model = models.resnet50(weights="IMAGENET1K_V2")
-    # Freeze all layers except the final classifier
-    for param in model.parameters():
-        param.requires_grad = False
+    config = load_config("configs/config.yaml")
 
-    # Replace the final classifier
-    num_ftrs = model.fc.in_features
-    num_classes = get_num_classes(preprocessing_config["train_csv_path"])
-    print(f"Number of classes: {num_classes}")
-    model.fc = nn.Linear(num_ftrs, num_classes)
+    attributes = torch.tensor(np.load(config["attributes_path"]), dtype=torch.float32)
+    train_df = pd.read_csv(config["train_csv_path"])
+    test_df = pd.read_csv(config["test_csv_path"])
 
-    # Move model to GPU if available
+    train_loader, val_loader, test_loader = get_data_loaders(
+        config, train_df, test_df, attributes
+    )
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-    print(f"Using device: {device}")
 
-    criterion = nn.CrossEntropyLoss()
+    # Load model
+    model = ModelFactory.create_model(
+        config["model_type"], config["num_classes"], config["attribute_dim"]
+    ).to(device)
 
-    optimizer = optim.Adam(model.fc.parameters(), lr=0.001)
+    # Optimizer, criterion and scheduler
+    # class_weights = torch.FloatTensor(class_weights).to(device)
+    criterion = nn.CrossEntropyLoss(label_smoothing=config["label_smoothing"])
+    optimizer = optim.Adam(
+        model.parameters(),
+        lr=config["learning_rate"],
+        weight_decay=config["weight_decay"],
+    )
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30, eta_min=1e-6)
 
-    # Decay LR by a factor of 0.1 every 7 epochs
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
-
-    train_model(
-        model=model,
-        criterion=criterion,
-        optimizer=optimizer,
-        scheduler=exp_lr_scheduler,
-        num_epochs=25,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        device=device,
+    # Train
+    best_model = train_model(
+        model,
+        train_loader,
+        val_loader,
+        criterion,
+        optimizer,
+        scheduler,
+        device,
+        config["num_epochs"],
     )
 
-    # Save the final model
-    torch.save(
-        {
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "num_classes": num_classes,
-            "class_to_idx": (
-                train_loader.dataset.class_to_idx
-                if hasattr(train_loader.dataset, "class_to_idx")
-                else None
-            ),
-        },
-        "bird_classifier.pth",
+    # Evaluate
+    submission = evaluate_model(best_model, test_loader, device)
+    submission_path = os.path.join(
+        config["submission_dir"], f"submission_{args.num}.csv"
     )
+    save_submission(submission, submission_path)
+    submit_to_kaggle(submission_path, f"Submission {args.num}")
