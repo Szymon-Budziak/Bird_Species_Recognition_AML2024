@@ -48,7 +48,9 @@ def submit_to_kaggle(file_path, message):
         print("Submission failed:", e.stderr)
 
 
-def save_best_model(model, optimizer, scheduler, best_acc, epoch, best_model_path):
+def save_best_model(
+    model, optimizer, scheduler, best_acc, epoch, config, best_model_path
+):
     torch.save(
         {
             "model_state_dict": model.state_dict(),
@@ -56,6 +58,7 @@ def save_best_model(model, optimizer, scheduler, best_acc, epoch, best_model_pat
             "scheduler_state_dict": scheduler.state_dict(),
             "best_acc": best_acc,
             "epoch": epoch,
+            "config": config,
         },
         best_model_path,
     )
