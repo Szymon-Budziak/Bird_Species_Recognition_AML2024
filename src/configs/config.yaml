@@ -1,11 +1,16 @@
-train_csv_path: "data/train_images.csv"
-train_dir_path: "data/train_images/"
-test_csv_path: "data/test_images_path.csv"
-test_dir_path: "data/test_images/"
+train_csv_path: "/net/tscratch/people/plgszymonbudziak/Bird_Species_Recognition_AML2024/src/data/train_images.csv"
+train_dir_path: "/net/tscratch/people/plgszymonbudziak/Bird_Species_Recognition_AML2024/src/data/train_images"
+test_csv_path: "/net/tscratch/people/plgszymonbudziak/Bird_Species_Recognition_AML2024/src/data/test_images_path.csv"
+test_dir_path: "/net/tscratch/people/plgszymonbudziak/Bird_Species_Recognition_AML2024/src/data/test_images"
+attributes_path: "/net/tscratch/people/plgszymonbudziak/Bird_Species_Recognition_AML2024/src/data/attributes.npy"
+class_names_path: "/net/tscratch/people/plgszymonbudziak/Bird_Species_Recognition_AML2024/src/data/class_names.npy"
+submission_dir: "experiments/submissions"
+model_type: "vit"
+num_classes: 200
+attribute_dim: 312
+batch_size: 16
+num_epochs: 100
+learning_rate: 1e-4
 resize_size: [224, 224]
-brightness: 0.2
-contrast: 0.2
-saturation: 0.2
-hue: 0.1
-batch_size: 32
-num_workers: 4
+val_size: 0.1
+label_smoothing: 0.2
