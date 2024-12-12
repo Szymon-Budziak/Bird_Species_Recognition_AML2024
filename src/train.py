@@ -13,18 +13,23 @@ from data_generator import get_data_loaders
 
 
 def train_model(
-    model, train_loader, val_loader, criterion, optimizer, scheduler, device, num_epochs
+    model, train_loader, val_loader, criterion, optimizer, scheduler, device, config
 ):
     print("Training model")
+
+    # Create directories for models and submissions
+    os.makedirs(config["models_dir"], exist_ok=True)
+    os.makedirs(config["submission_dir"], exist_ok=True)
 
     with TemporaryDirectory() as temp_dir:
         best_model_params_path = os.path.join(temp_dir, "best_model_params.pt")
 
         torch.save(model.state_dict(), best_model_params_path)
         best_acc = 0.0
+        patience_counter = 0
 
-        for epoch in range(num_epochs):
-            print(f"Epoch {epoch+1}/{num_epochs}")
+        for epoch in range(config["num_epochs"]):
+            print(f"Epoch {epoch+1}/{config['num_epochs']}")
             print("-" * 10)
 
             # Each epoch has a training and validation phase
@@ -47,7 +52,8 @@ def train_model(
                     )
 
                     # Zero the parameter gradients
-                    optimizer.zero_grad()
+                    if phase == "train":
+                        optimizer.zero_grad()
 
                     # Forward + Track history if only in train phase
                     with torch.set_grad_enabled(phase == "train"):
@@ -91,14 +97,20 @@ def evaluate_model(model, test_loader, device):
 
     with torch.no_grad():
         for images, ids, attributes in test_loader:
-            images, labels, attributes = (
-                images.to(device),
-                labels.to(device),
-                attributes.to(device),
-            )
+            images = images.to(device)
+            attributes = attributes.to(device)
+
             outputs = model(images, attributes)
             _, preds = torch.max(outputs, 1)
-            submission.extend(zip(ids.cpu().numpy(), preds.cpu().numpy() + 1))
+
+            preds_np = preds.cpu().numpy() + 1
+
+            if isinstance(ids, torch.Tensor):
+                ids_np = ids.cpu().numpy()
+            else:
+                ids_np = np.array(ids)
+
+            submission.extend(zip(ids_np, preds_np))
 
     return submission
 
@@ -147,7 +159,7 @@ if __name__ == "__main__":
         optimizer,
         scheduler,
         device,
-        config["num_epochs"],
+        config
     )
 
     # Evaluate

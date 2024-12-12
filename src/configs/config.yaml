@@ -5,6 +5,8 @@ test_dir_path: "data/test_images"
 attributes_path: "data/attributes.npy"
 class_names_path: "data/class_names.npy"
 submission_dir: "experiments/submissions"
+models_dir: "experiments/models"
+checkpoints_dir: "experiments/checkpoints"
 model_type: "vit"
 num_classes: 200
 attribute_dim: 312
@@ -16,3 +18,4 @@ resize_size: [224, 224]
 val_size: 0.1
 label_smoothing: 0.2
 num_workers: 4
+patience: 7
