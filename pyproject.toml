@@ -2,7 +2,7 @@
 name = "bird-species-recognition-aml2024"
 version = "0.1.0"
 description = "Deep learning-based classification of 200 bird species using image recognition techniques"
-authors = ["Szymon Budziak"]
+authors = ["Szymon Budziak, Ruben den Braber, Ella Brady,  Cruset Pla"]
 readme = "README.md"
 packages = [{ include = "src", from = "." }]
 
