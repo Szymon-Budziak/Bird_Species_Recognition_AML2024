@@ -9,7 +9,7 @@ import os
 from collections import Counter
 
 from custom_models import ModelFactory
-from utils import save_submission, submit_to_kaggle, save_best_model
+from utils import save_submission, submit_to_kaggle, save_best_model, FocalLoss
 from data_generator import get_data_loaders
 
 
@@ -78,11 +78,14 @@ def train_model(
                 total += labels.size(0)
                 running_corrects += preds.eq(labels).sum().item()
 
-            if phase == "train":
-                scheduler.step()
-
             epoch_loss = running_loss / len(dataloader)
             epoch_acc = 100 * running_corrects / total
+
+            if config["use_cosine_scheduler"]:
+                scheduler.step()
+            else:
+                if phase == "val":
+                    scheduler.step(epoch_acc)
 
             print(f"{phase} Loss: {epoch_loss:.4f} Acc: {epoch_acc:.4f}")
 
@@ -90,22 +93,27 @@ def train_model(
                 if epoch_acc > best_acc:
                     best_acc = epoch_acc
                     save_best_model(
-                        model, optimizer, scheduler, best_acc, epoch, best_model_path
+                        model,
+                        optimizer,
+                        scheduler,
+                        best_acc,
+                        epoch,
+                        config,
+                        best_model_path,
                     )
                     patience_counter = 0
                 else:
                     patience_counter += 1
 
-        # Check early stopping
-        if patience_counter >= config["patience"]:
-            print(f"Early stopping triggered at epoch {epoch+1}")
+        if patience_counter >= config["early_stopping_patience"]:
+            print(f"Early stopping at epoch {epoch}")
             break
 
     print(f"\nTraining complete")
     print(f"Best val Acc: {best_acc:.4f}")
 
     # Load best model weights
-    checkpoint = torch.load(best_model_path)
+    checkpoint = torch.load(best_model_path, weights_only=True)
     model.load_state_dict(checkpoint["model_state_dict"])
     return model
 
@@ -143,38 +151,66 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = load_config("configs/config.yaml")
+    print(f"Config: {config}")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(
+        f'Running model: {config["model_type"]} for {config["num_epochs"]} epochs with batch size {config["batch_size"]}'
+    )
 
     attributes = torch.tensor(np.load(config["attributes_path"]), dtype=torch.float32)
     train_df = pd.read_csv(config["train_csv_path"])
     test_df = pd.read_csv(config["test_csv_path"])
 
-    train_loader, val_loader, test_loader = get_data_loaders(
-        config, train_df, test_df, attributes
-    )
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Load model
-    model = ModelFactory.create_model(
-        config["model_type"], config["num_classes"], config["attribute_dim"]
-    ).to(device)
-
-    # Optimizer, criterion and scheduler
     class_counts = Counter(train_df["label"])
     class_weights = np.array(
         [1.0 / class_counts.get(i, 1) for i in range(config["num_classes"])]
     )
     class_weights = torch.FloatTensor(class_weights).to(device)
-    criterion = nn.CrossEntropyLoss(
-        weight=class_weights, label_smoothing=config["label_smoothing"]
+
+    train_loader, val_loader, test_loader = get_data_loaders(
+        config, train_df, test_df, attributes, class_weights
     )
 
-    optimizer = optim.Adam(
-        model.parameters(),
-        lr=config["learning_rate"],
-        weight_decay=config["weight_decay"],
-    )
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    # Load model
+    model = ModelFactory.create_model(config).to(device)
+
+    # Optimizer, criterion and scheduler
+    if config["use_focal_loss"]:
+        criterion = FocalLoss(gamma=1.0, alpha=class_weights)
+    else:
+        criterion = nn.CrossEntropyLoss(
+            weight=class_weights, label_smoothing=config["label_smoothing"]
+        )
+    print(f"Criterion: {type(criterion).__name__}")
+
+    if config["use_adamw"]:
+        optimizer = optim.AdamW(
+            model.parameters(),
+            lr=config["learning_rate"],
+            weight_decay=config["weight_decay"],
+        )
+    else:
+        optimizer = optim.Adam(
+            model.parameters(),
+            lr=config["learning_rate"],
+            weight_decay=config["weight_decay"],
+        )
+    print(f"Optimizer: {type(optimizer).__name__}")
+
+    if config["use_cosine_scheduler"]:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=config["num_epochs"]
+        )
+    else:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",
+            factor=config["scheduler_factor"],
+            patience=config["scheduler_patience"],
+        )
+    print(f"Scheduler: {type(scheduler).__name__}")
 
     # Train
     best_model = train_model(
