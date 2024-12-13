@@ -106,3 +106,32 @@ class FocalLoss(nn.Module):
 
         # Return mean or sum based on size_average
         return loss.mean() if self.size_average else loss.sum()
+
+
+def create_final_submission(best_submission_path: str) -> pd.DataFrame:
+    """
+    Create the final submission by averaging the best submissions.
+    """
+    best_submissions_list = os.listdir(best_submission_path)
+    best_submissions_df = pd.DataFrame()
+
+    for idx, submission in enumerate(best_submissions_list):
+        submission_path = os.path.join(best_submission_path, submission)
+        submission_df = pd.read_csv(submission_path).set_index("id")
+        submission_df.rename(columns={"label": f"label_{idx}"}, inplace=True)
+        best_submissions_df = pd.concat([best_submissions_df, submission_df], axis=1)
+
+    best_submissions_df["final_label"] = best_submissions_df.apply(
+        lambda x: x.value_counts().idxmax(), axis=1
+    )
+
+    final_submission_df = pd.DataFrame(
+        data={
+            "id": best_submissions_df.index,
+            "label": best_submissions_df["final_label"],
+        }
+    ).reset_index(drop=True)
+
+    final_submission_df.to_csv("final_submission.csv", index=False)
+
+    return final_submission_df
