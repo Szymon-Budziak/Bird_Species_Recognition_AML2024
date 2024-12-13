@@ -55,3 +55,7 @@ To submit a submission, run the following command:
 ```bash
 kaggle competitions submit -c aml-2024-feather-in-focus -f submission.csv -m "Message"
 ```
+
+## Final poster
+
+![Final poster](./poster.png)
