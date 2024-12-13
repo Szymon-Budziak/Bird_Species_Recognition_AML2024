@@ -1,8 +1,8 @@
 [tool.poetry]
 name = "bird-species-recognition-aml2024"
-version = "0.1.0"
+version = "1.0.0"
 description = "Deep learning-based classification of 200 bird species using image recognition techniques"
-authors = ["Szymon Budziak, Ruben den Braber, Ella Brady,  Cruset Pla"]
+authors = ["Szymon Budziak, Ruben den Braber, Ella Brady, Eduard Cruset Pla"]
 readme = "README.md"
 packages = [{ include = "src", from = "." }]
 
